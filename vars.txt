@@ -1,0 +1,21 @@
+N Number of images in mini-batch
+C Number of input feature maps
+H Height of input image
+W Width of input image
+K Number of output feature maps
+R Height of filter
+S Width of filter
+u Vertical stride
+v Horizontal stride
+pad_h Height of zero padding
+pad_w Width of zero padding
+
+
+Two inputs to convolution:
+
+D is a four-dimensional N x C x H x W tensor which forms the input data. Tensor is a mathematical term
+for arrays that have more than two dimensions. In mathematics, matrices have only two dimensions. Arrays
+with three or more dimensions are called tensors. For the purpose of this book, one can simply treat
+a T-dimensional tensor as a T-dimensional array.
+
+F is a four-dimensional K x C x R x S tensor, which forms the convolutional filters
