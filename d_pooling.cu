@@ -39,8 +39,6 @@ void d_pooling(float * matrixM, float * matrixN, float * result,
 
     dim3 dimGrid(ceil(width/TILE_WIDTH),ceil(width/TILE_WIDTH),1);
     dim3 dimBlock(TILE_WIDTH,TILE_WIDTH,1);
-    dim3 dimHalfBlock(TILE_WIDTH,TILE_WIDTH/2,1);
-
     
     d_poolingKernel<<<dimGrid, dimBlock>>>(d_matrixM, d_matrixN, d_result, width);
 
