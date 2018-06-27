@@ -54,8 +54,7 @@ void checkCommandArgs(int argc, char * argv[], int * width, int * height)
 
 void printUsage()
 {
-    printf("\nThis program creates a ppm file of the txt file
-              passed as an argument.\n\n");
+    printf("\nThis program creates a ppm file of the txt file passed as an argument.\n\n");
     printf("usage: generate <name>.txt <name>.ppm width height\n");
     printf("       <name>.ppm is the name of the created ppm file\n");
     printf("       both width and height must be = 32\n\n");

@@ -1,17 +1,29 @@
 #Sam Barr and Eli McGalliard
 #6/20/2018
-############  NOT COMPLETE  ############
-CC = g++
-CXXFLAGS = -Wall -g -std=c++0x
-.SUFFIXES: .C .o
-OBJS = generate.o d_convNet.o convNet.o
-.C.o:
-	g++ -c -g $<
 
-d_convNet.o: d_convNet.cu d_convNet.h config.h CHECK.h
+NVCC = /usr/local/cuda-8.0/bin/nvcc
+CC = g++
+GENCODE_FLAGS = -arch=sm_30
+CXXFLAGS = -Wall -g -std=c++0x
+CC_FLAGS = -c
+NVCCFLAGS = -m64 -O3 -Xptxas -v
+.SUFFIXES: .cu .o .h
+
+OBJS =  d_forwardPropagation.o convNet.o wrappers.o
+.cu.o:
+	$(NVCC) $(CC_FLAGS) $(NVCCFLAGS) $(GENCODE_FLAGS) $< -o $@
+
+all: convNet
+
+convNet: $(OBJS)
+	$(CC) $(OBJS) -L/usr/local/cuda/lib64 -lcuda -lcudart -o convNet
+
+d_forwardPropagation.o: d_forwardPropagation.cu d_forwardPropagation.h CHECK.h
+
+convNet.o: wrappers.h 
 
 wrappers.o: wrappers.cu wrappers.h
 
 
 clean:
-	rm -f *.o
+	rm -f convNet *.o
