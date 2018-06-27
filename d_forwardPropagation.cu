@@ -10,6 +10,7 @@
 #define SUBSAMPLESIZE 2
 #define TILEWIDTH 16
 
+
 __global__ void d_convLayerForwardKernel(int, int, int, unsigned char *, float *, float *);
 
 /**
@@ -19,7 +20,7 @@ __global__ void d_convLayerForwardKernel(int, int, int, unsigned char *, float *
  * @param size of input image
  */
 void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * weights, 
-                                            int numInput, float * result)
+                                            int numInput, int weightLen, float * result)
 {
     cudaEvent_t start_cpu, stop_cpu;
     float cpuMsecTime = -1;
@@ -38,7 +39,7 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
     
     int inSize = sizeof(unsigned char)*numInput*numInput;
     int outSize = sizeof(float)*(numInput-MASKSIZE-1)*(numInput-MASKSIZE-1);
-    int weightSize = sizeof(float)*25;
+    int weightSize = sizeof(float)*weightLen*weightLen;
     CHECK(cudaMalloc((void **)&d_outputMap, outSize));
     CHECK(cudaMalloc((void **)&d_weights, weightSize));
     CHECK(cudaMalloc((void **)&d_inputMap, inSize));
@@ -54,7 +55,7 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
     dim3 gridDim(gridSize, gridSize, gridZ);
     size_t shmemSize = sizeof(float) * ((TILEWIDTH + gridSize-1)*(TILEWIDTH + gridSize-1) + gridSize*gridSize);
     //Launch
-    d_convLayerForwardKernel<<<gridDim, blockDim, shmemSize>>>(gridSize, numInput, gridSize, d_inputMap, 
+    d_convLayerForwardKernel<<<gridDim, blockDim, shmemSize>>>(gridSize, numInput, weightLen, d_inputMap, 
 										d_weights, d_outputMap);
     CHECK(cudaDeviceSynchronize());
     CHECK(cudaMemcpy(outputMap, d_outputMap, outSize, cudaMemcpyDeviceToHost));
@@ -75,16 +76,16 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
  * @param weights to apply to each input map
  * @param outputMap
  */
-__global__ void d_convLayerForwardKernel(int gridWidth, int numInput, int numOutput, unsigned char * inputMap, 
+__global__ void d_convLayerForwardKernel(int gridWidth, int numInput, int weightLen, unsigned char * inputMap, 
                                                           float * weights, float * outputMap)
 {
     int n, m, h_base, w_base, h, w;
-    int xTileWidth = TILEWIDTH + numOutput-1;
-    int weightLen = xTileWidth * xTileWidth;
+    int xTileWidth = TILEWIDTH + weightLen-1;
+    int iWeight = xTileWidth * xTileWidth;
     int inputLen = numInput*numInput; 
     extern __shared__ float shmem[];
     float * inputShared = &shmem[0];
-    float * weightShared = &shmem[xTileWidth * xTileWidth];    
+    float * weightShared = &shmem[iWeight];    
 
     n = blockIdx.x;
     m = blockIdx.y;
@@ -98,23 +99,23 @@ __global__ void d_convLayerForwardKernel(int gridWidth, int numInput, int numOut
     //Add over all channels
     for (c = 0; c < numInput; c++) {
         //Load weight vector into shared memory
-        if ((threadIdx.x < numOutput) && (threadIdx.y < numOutput))                           
+        if ((threadIdx.x < weightLen) && (threadIdx.y < weightLen))                           
             weightShared[threadIdx.y*blockDim.x+threadIdx.x] = 
-                           weights[m+numOutput*(c+numInput*(threadIdx.x+blockDim.x*threadIdx.y))]; //m,c,tIdx,tIdy
+                           weights[m+weightLen*(c+numInput*(threadIdx.x+blockDim.x*threadIdx.y))]; //m,c,tIdx,tIdy
         __syncthreads();                    
         
         //Load input map into shared memory
         for (i = h; i < h_base + xTileWidth; i += TILEWIDTH) {
             for (j = w; j < w_base + xTileWidth; j += TILEWIDTH)
-                inputShared[(i-h_base)*inputLen+(j-w_base)] = (float) inputMap[n+numOutput*(c+CHANNELS*(h+gridWidth*w))]; //n,c,h,w
+                inputShared[(i-h_base)*inputLen+(j-w_base)] = (float) inputMap[n+numInput*(c+CHANNELS*(h+gridWidth*w))]; //n,c,h,w
         }                                       
 
         __syncthreads();
-        for (p = 0; p < numOutput; p++) {
-            for (q = 0; q < numOutput; q++)
+        for (p = 0; p < weightLen; p++) {
+            for (q = 0; q < weightLen; q++)
                 acc += inputShared[(h+p)*inputLen+(w+q)] * weightShared[p*weightLen+q];
         }
         __syncthreads();
     }
-    outputMap[n+numOutput*(m+numOutput*(h+gridWidth*w))] = acc; //n,m,h,w
+    outputMap[n+numInput*(m+numInput*(h+gridWidth*w))] = acc; //n,m,h,w
 }
