@@ -20,7 +20,7 @@ __global__ void d_convLayerForwardKernel(int, int, int, unsigned char *, float *
  * @param size of input image
  */
 void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * weights, 
-                                            int numInput, int weightLen, float * result)
+                                                                  int numInput, int weightLen)
 {
     cudaEvent_t start_cpu, stop_cpu;
     float cpuMsecTime = -1;
@@ -38,9 +38,9 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
     float * d_outputMap;
     
     int inSize = sizeof(unsigned char)*numInput*numInput;
-    int outSize = sizeof(float)*(numInput-MASKSIZE-1)*(numInput-MASKSIZE-1);
+    int outputSize = sizeof(float)*(numInput-MASKSIZE-1)*(numInput-MASKSIZE-1);
     int weightSize = sizeof(float)*weightLen*weightLen;
-    CHECK(cudaMalloc((void **)&d_outputMap, outSize));
+    CHECK(cudaMalloc((void **)&d_outputMap, outputSize));
     CHECK(cudaMalloc((void **)&d_weights, weightSize));
     CHECK(cudaMalloc((void **)&d_inputMap, inSize));
 
@@ -48,7 +48,7 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
     CHECK(cudaMemcpy(d_weights, weights, weightSize, cudaMemcpyHostToDevice));
 
     //Prepare Convolution Kernel
-    outSize = numInput - (MASKSIZE-1);
+    int outSize = numInput - (MASKSIZE-1);
     int gridSize = outSize/TILEWIDTH;
     int gridZ = gridSize * gridSize;
     dim3 blockDim(TILEWIDTH, TILEWIDTH, 1);
@@ -58,7 +58,7 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
     d_convLayerForwardKernel<<<gridDim, blockDim, shmemSize>>>(gridSize, numInput, weightLen, d_inputMap, 
 										d_weights, d_outputMap);
     CHECK(cudaDeviceSynchronize());
-    CHECK(cudaMemcpy(outputMap, d_outputMap, outSize, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(outputMap, d_outputMap, outputSize, cudaMemcpyDeviceToHost));
     CHECK(cudaFree(d_outputMap));
     CHECK(cudaFree(d_inputMap));
     CHECK(cudaFree(d_weights));
