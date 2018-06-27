@@ -5,6 +5,10 @@
 
 #define CHANNELS 3    
 
+void readPGMImage(char *, unsigned char **, int *, int *, int *);
+void parseCommandArgs(int, char *, char **);
+void printUsage();
+
 int main(int argc, char * argv[])
 {
     unsigned char * Pin;
@@ -13,16 +17,16 @@ int main(int argc, char * argv[])
     parseCommandArgs(argc, argv, &blkWidth, &blkHeight, &fileName);
     readPPMImage(fileName, &Pin, &width, &height, &color);
 
-    //use the GPU to perform the greyscale
+    //use the GPU to perform the convoluted neural network
     unsigned char * d_Pout;
     d_Pout = (unsigned char *) Malloc((sizeof(unsigned char) * blkWidth * blkHeight));
-    d_colorToGreyscale(d_Pout, Pin, width, height, blkWidth, blkHeight);
+    d_convLayerForward(Pin, d_Pout, weights, numInput, result);
     char * d_outfile = buildFilename(fileName, "d_grey");
     writePPMImage(d_outfile, d_Pout, width, height, color);
 
 }
 
-void readPPMImage(char * filename, unsigned char ** Pin,
+void readPGMImage(char * filename, unsigned char ** Pin,
                int * width, int * height, int * color)
 {
     int ht, wd, colr;
@@ -30,7 +34,7 @@ void readPPMImage(char * filename, unsigned char ** Pin,
     FILE * fp = fopen(filename, "rb"); //read binary
     int count = fscanf(fp, "%s\n%d %d\n%d\n", P6, &wd, &ht, &colr);
     //should have read four values
-    //first value is the string "P6"
+    //first value is the string "P3"
     //color value must be less than 256 and greater than 0
     if (count != 4 || strncmp(P3, "P3", CHANNELS) || colr <= 0 || colr > 255)
     {
