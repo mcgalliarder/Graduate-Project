@@ -4,6 +4,7 @@
 #include <math.h>
 #include "wrappers.h"
 #include "d_forwardPropagation.h"
+#include "d_pooling.h"
 
 #define CHANNELS 1    
 
@@ -11,8 +12,8 @@ void readPGMImage(char *, unsigned char **, int *, int *, int *);
 void parseCommandArgs(int, char **, char **);
 void printUsage();
 void fillArray(float *, int);
-void printFloatArray(float * array, int width, int length);
-void printCharArray(unsigned char * array, int width, int length);
+void printFloatArray(float * array, int width);
+void printCharArray(unsigned char * array, int width);
 
 int main(int argc, char * argv[])
 {
@@ -22,19 +23,30 @@ int main(int argc, char * argv[])
     parseCommandArgs(argc, argv, &fileName);
     readPGMImage(fileName, &Pin, &width, &height, &color);
     //Print original
-    printCharArray(Pin, width, width*height);    
+    printf("Original\n");
+    printCharArray(Pin, width);    
 
     //use the GPU to perform the convoluted neural network
     float * d_Pout;
     float * weights;
-    int weightLen = 2;
+    int weightLen = 5;
     weights = (float *) Malloc((sizeof(float) * weightLen * weightLen));
-    fillArray(weights, weightLen);
+    fillArray(weights, (weightLen*weightLen));
     d_Pout = (float *) Malloc((sizeof(float) * width * height));
-    d_convLayerForward(Pin, d_Pout, weights, 1, weightLen);
+    d_convLayerForward(Pin, d_Pout, weights, width, 1, weightLen);
 
     //Print result
-    printFloatArray(d_Pout, width-4, width*height);
+    printf("Convolution:\n");
+    printFloatArray(d_Pout, 16);
+    
+    float * subOut;
+    subOut = (float *) Malloc((sizeof(float) * width * height));
+
+    //GPU subsampling
+    d_pooling(d_Pout, subOut, 1, 16, weightLen);
+    
+    printf("\nPooling:\n");
+    printFloatArray(subOut, 16);
 }
 
 void readPGMImage(char * filename, unsigned char ** Pin,
@@ -49,12 +61,6 @@ void readPGMImage(char * filename, unsigned char ** Pin,
     }
     int count = fscanf(fp, "%s\n%d %d\n%d\n", P3, &wd, &ht, &colr);
     //should have read four values
-    //first value is the string "P3"
-    //color value must be less than 256 and greater than 0
-    //printf("Width: %d\n",wd);
-    //printf("Height: %d\n",ht);
-    //printf("Color: %d\n",colr);
-    //printf("P3: %d %d %d\n",P3[0],P3[1],P3[2]);
     if (count != 4 || strncmp(P3, "P5", CHANNELS) || colr <= 0 || colr > 255)
     {
         printf("\nInvalid file format.\n\n");
@@ -109,18 +115,18 @@ void parseCommandArgs(int argc, char * argv[], char ** fileNm)
     (*fileNm) = argv[fileIdx];
 }
 
-void printFloatArray(float * array, int width, int length) 
+void printFloatArray(float * array, int width) 
 {
-    for (int i = 0; i < length; i++)
+    for (int i = 0; i < width*width; i++)
     {   
         if (!(i%width)) printf("\n%2d:", i/width);
         printf("%2.1f ", array[i]);
     } 
 }
 
-void printCharArray(unsigned char * array, int width, int length)
+void printCharArray(unsigned char * array, int width)
 {
-    for (int i = 0; i < length; i++)
+    for (int i = 0; i < width*width; i++)
     {
         if (!(i%width)) printf("\n%2d:", i/width);
         printf("%3x", array[i]);

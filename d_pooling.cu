@@ -2,16 +2,14 @@
 #include <stdlib.h>
 #include <cuda_runtime.h>
 #include "CHECK.h"
-//config.h defines the TILE_WIDTH
-//and the constants: SIMPLE, TILED, TILED2
-//that indicate which kernel to launch
 #include "config.h"
 #include "d_pooling.h"
 
 //prototypes for kernels in this file
+__global__ void d_poolingKernel(float *, float *, int, int, int);
+__device__ int d_sigmoid(float x); 
 
-
-void d_pooling(float * d_inputMap, float * d_outputMap, int width)
+void d_pooling(float * inputMap, float * outputMap, int numInput, int weightLen, int width)
 {
     cudaEvent_t start_gpu, stop_gpu;
     float gpuMsecTime = -1;
@@ -24,59 +22,52 @@ void d_pooling(float * d_inputMap, float * d_outputMap, int width)
     CHECK(cudaEventCreate(&stop_gpu));
     CHECK(cudaEventRecord(start_gpu));
 
-    //Your work goes here
-    //kernel calls provided but you need to write the code for the
-    //memory allocations, etc. and define the grid and the block
-    //Use TILE_SIZE (defined in config.h)
     CHECK(cudaMalloc((void **)&d_inputMap,size));
     CHECK(cudaMalloc((void **)&d_outputMap,size));
 
     CHECK(cudaMemcpy(d_inputMap, inputMap, size, cudaMemcpyHostToDevice));
 
-    dim3 dimGrid(ceil(width/TILE_WIDTH),ceil(width/TILE_WIDTH),1);
-    dim3 dimBlock(TILE_WIDTH,TILE_WIDTH,1);
+    dim3 dimGrid(ceil(width/TILEWIDTH),ceil(width/TILEWIDTH),1);
+    dim3 dimBlock(TILEWIDTH,TILEWIDTH,1);
     
-    d_poolingKernel<<<dimGrid, dimBlock>>>(d_matrixM, d_matrixN, d_result, width);
+    d_poolingKernel<<<dimGrid, dimBlock>>>(inputMap, outputMap, numInput, width, weightLen);
 
-    CHECK(cudaMemcpy(result, d_result, size, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(outputMap, d_outputMap, size, cudaMemcpyDeviceToHost));
     CHECK(cudaFree(d_inputMap));
     CHECK(cudaFree(d_outputMap));
 }
 
 
-__global__ void d_poolingKernel(float * d_inputMap, float * d_outputMap, float * bias, int width)
+/**
+ * Creates an averaged subsample of the input map
+ * @param d_inputMap
+ * @param d_outputMap
+ * @param numInput number of inputs
+ * @param width of input
+ * @param weightLen length of weight vector
+ */
+__global__ void d_poolingKernel(float * d_inputMap, float * d_outputMap, int numInput, int width, int weightLen)
 {
 
         int row = blockIdx.y * blockDim.y + threadIdx.y;
         int col = blockIdx.x * blockDim.x + threadIdx.x;
-        int acc = 0.0;
-        int index = c+numInput*(row*blockDim.x+col);
+   
         //Go over all input feature maps
-        for (int c = 0; i < numInput; c++) {
-	    //definirely not finished yo            
-            for (p = 0; p < numOutput; p++) 
-                for (q = 0; q < numOutput; q++) {
+        for (int c = 0; c < numInput; c++){        
+            int index = c+numInput*(row*blockDim.x+col);
+            for (int p = 0; p < weightLen; p++) 
+                for (int q = 0; q < weightLen; q++) {
                     d_outputMap[index] = d_outputMap[index] + 
-                         d_inputMap[c+numInput*((numInput*col+p)*width+(numInput*row+q))]
-                               /(numOutput*numOutput);
+                         d_inputMap[c+numInput*((width*col+p)*width+(width*row+q))]
+                               /(weightLen*weightLen);
             }
             //Add bias and sigmoid
-            d_output[index] = sigmoid(d_output[index] + bias[c]);
+            d_outputMap[index] = d_sigmoid(d_outputMap[index]);
         }
 
-
-        if ((row < width) && (col < width)) {
-                float pValue = 0;
-                for (int k = 0; k < width; ++k) {
-                        pValue += d_matrixM[row * width + k]; 
-                }
-	    pValue /= (width * width); //Get the average of the current pValue
-            d_result[row * width + col] = d_sigmoid(pValue);
-            
-        }
 }
 
-__global__ int d_sigmoid(float x) {
+__device__ int d_sigmoid(float x) {
     return x/(1 + abs(x));
 }
 

@@ -1,1 +1,1 @@
-void d_pooling(float * matrixM, float * matrixN, float * result, int width);
+void d_pooling(float *, float *, int, int, int);

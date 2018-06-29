@@ -4,14 +4,12 @@
 #include <cuda_runtime.h>
 //#include "d_colorToGreyscale.h"
 #include "CHECK.h"
-
-#define CHANNELS 3
-#define MASKSIZE 5
-#define SUBSAMPLESIZE 2
-#define TILEWIDTH 16
+#include "config.h"
 
 
-__global__ void d_convLayerForwardKernel(int, int, int, unsigned char *, float *, float *);
+__global__ void d_convLayerForwardKernel(int, int, int, unsigned char *, int, float *, float *);
+__device__ void printVector(float * array, int width);
+__device__ void printCharVector(unsigned char * array, int width);
 
 /**
  * Performs one forward run through the network
@@ -20,7 +18,7 @@ __global__ void d_convLayerForwardKernel(int, int, int, unsigned char *, float *
  * @param size of input image
  */
 void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * weights, 
-                                                                  int numInput, int weightLen)
+                                                          int inputLen, int numInput, int weightLen)
 {
     cudaEvent_t start_cpu, stop_cpu;
     float cpuMsecTime = -1;
@@ -37,8 +35,9 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
     float * d_weights;
     float * d_outputMap;
     
-    int inSize = sizeof(unsigned char)*numInput*numInput;
-    int outputSize = sizeof(float)*(numInput-MASKSIZE-1)*(numInput-MASKSIZE-1);
+
+    int inSize = sizeof(unsigned char)*inputLen*inputLen*numInput;
+    int outputSize = sizeof(float)*(inputLen-weightLen-1)*(inputLen-weightLen-1);
     int weightSize = sizeof(float)*weightLen*weightLen;
     CHECK(cudaMalloc((void **)&d_outputMap, outputSize));
     CHECK(cudaMalloc((void **)&d_weights, weightSize));
@@ -47,16 +46,16 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
     CHECK(cudaMemcpy(d_inputMap, inputMap, inSize, cudaMemcpyHostToDevice));
     CHECK(cudaMemcpy(d_weights, weights, weightSize, cudaMemcpyHostToDevice));
 
-    //Prepare Convolution Kernel
-    int outSize = numInput - (MASKSIZE-1);
-    int gridSize = outSize/TILEWIDTH;
+    //Launch
+    int outSize = inputLen - (weightLen-1);
+    int gridSize = ceil(outSize/TILEWIDTH);
     int gridZ = gridSize * gridSize;
     dim3 blockDim(TILEWIDTH, TILEWIDTH, 1);
     dim3 gridDim(gridSize, gridSize, gridZ);
-    size_t shmemSize = sizeof(float) * ((TILEWIDTH + gridSize-1)*(TILEWIDTH + gridSize-1) + gridSize*gridSize);
+    size_t shmemSize = sizeof(float) * ((TILEWIDTH + weightLen-1)*(TILEWIDTH + weightLen-1) + weightLen*weightLen);
     //Launch
     d_convLayerForwardKernel<<<gridDim, blockDim, shmemSize>>>(gridSize, numInput, weightLen, d_inputMap, 
-										d_weights, d_outputMap);
+									inputLen, d_weights, d_outputMap);
     CHECK(cudaDeviceSynchronize());
     CHECK(cudaMemcpy(outputMap, d_outputMap, outputSize, cudaMemcpyDeviceToHost));
     CHECK(cudaFree(d_outputMap));
@@ -77,15 +76,19 @@ void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * wei
  * @param outputMap
  */
 __global__ void d_convLayerForwardKernel(int gridWidth, int numInput, int weightLen, unsigned char * inputMap, 
-                                                          float * weights, float * outputMap)
+                                                          int inputLen, float * weights, float * outputMap)
 {
     int n, m, h_base, w_base, h, w;
+    int outputLen = inputLen - (weightLen-1);
     int xTileWidth = TILEWIDTH + weightLen-1;
     int iWeight = xTileWidth * xTileWidth;
-    int inputLen = numInput*numInput; 
-    extern __shared__ float shmem[];
+    extern __shared__ float shmem[]; 
     float * inputShared = &shmem[0];
-    float * weightShared = &shmem[iWeight];    
+    float * weightShared = &shmem[iWeight];   
+    
+    //Purely for testing purposes
+    int t = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
     n = blockIdx.x;
     m = blockIdx.y;
@@ -93,29 +96,57 @@ __global__ void d_convLayerForwardKernel(int gridWidth, int numInput, int weight
     w_base = (blockIdx.z % gridWidth) * TILEWIDTH; // horizontal base out data index for the block
     h = h_base + threadIdx.x;
     w = w_base + threadIdx.y;
-
+    
     float acc = 0.;
     int c, i, j, p, q;
     //Add over all channels
     for (c = 0; c < numInput; c++) {
         //Load weight vector into shared memory
-        if ((threadIdx.x < weightLen) && (threadIdx.y < weightLen))                           
-            weightShared[threadIdx.y*blockDim.x+threadIdx.x] = 
-                           weights[m+weightLen*(c+numInput*(threadIdx.x+blockDim.x*threadIdx.y))]; //m,c,tIdx,tIdy
-        __syncthreads();                    
-        
+        int wIndex = threadIdx.x*TILEWIDTH+threadIdx.y;
+        if (wIndex < weightLen*weightLen) {                           
+            weightShared[threadIdx.x*TILEWIDTH+threadIdx.y] = 
+                           weights[(c+numInput*(threadIdx.x*TILEWIDTH+threadIdx.y))]; //m,c,tIdx,tIdy
+        }
+        __syncthreads();                   
         //Load input map into shared memory
         for (i = h; i < h_base + xTileWidth; i += TILEWIDTH) {
-            for (j = w; j < w_base + xTileWidth; j += TILEWIDTH)
-                inputShared[(i-h_base)*inputLen+(j-w_base)] = (float) inputMap[n+numInput*(c+CHANNELS*(h+gridWidth*w))]; //n,c,h,w
+            for (j = w; j < w_base + xTileWidth; j += TILEWIDTH){
+                inputShared[(i-h_base)*TILEWIDTH+(j-w_base)] = 
+                           ((float) inputMap[n+gridWidth*(c+numInput*(h+TILEWIDTH*w))]); //n,c,h,w
+                
+            }
         }                                       
 
         __syncthreads();
+        //Accumulate input and weight vectors
         for (p = 0; p < weightLen; p++) {
-            for (q = 0; q < weightLen; q++)
-                acc += inputShared[(h+p)*inputLen+(w+q)] * weightShared[p*weightLen+q];
+            for (q = 0; q < weightLen; q++) {
+                acc += inputShared[(h+p)*TILEWIDTH+(w+q)] * weightShared[p*weightLen+q];
+            }
         }
         __syncthreads();
     }
-    outputMap[n+numInput*(m+numInput*(h+gridWidth*w))] = acc; //n,m,h,w
+    
+    //Load into output
+    outputMap[n+gridWidth*(m+gridWidth*(h+TILEWIDTH*w))] = acc; //n,m,h,w
+}
+
+__device__ void printVector(float * array, int width)
+{
+    for (int i = 0; i < width*width; i++) 
+    {
+        if (!(i%width)) printf("\n%2d:", i/width);
+        printf("%6.1f", array[i]);
+    }
+    printf("\n");
+}
+
+__device__ void printCharVector(unsigned char * array, int width)
+{
+    for (int i = 0; i < width*width; i++)
+    {
+        if (!(i%width)) printf("\n%2d:", i/width);
+        printf("%4.1d", array[i]);
+    }
+    printf("\n");
 }
