@@ -20,16 +20,6 @@ __device__ void printCharVector(unsigned char * array, int width);
 void d_convLayerForward(unsigned char * inputMap, float * outputMap, float * weights, 
                                                           int inputLen, int numInput, int weightLen)
 {
-    cudaEvent_t start_cpu, stop_cpu;
-    float cpuMsecTime = -1;
-
-    //Use cuda functions to do the timing
-    //create event objects
-    CHECK(cudaEventCreate(&start_cpu));
-    CHECK(cudaEventCreate(&stop_cpu));
-    //record the starting time
-    CHECK(cudaEventRecord(start_cpu));
-
     //Create device vectors 
     unsigned char * d_inputMap;
     float * d_weights;
@@ -79,16 +69,11 @@ __global__ void d_convLayerForwardKernel(int gridWidth, int numInput, int weight
                                                           int inputLen, float * weights, float * outputMap)
 {
     int n, m, h_base, w_base, h, w;
-    int outputLen = inputLen - (weightLen-1);
     int xTileWidth = TILEWIDTH + weightLen-1;
     int iWeight = xTileWidth * xTileWidth;
     extern __shared__ float shmem[]; 
     float * inputShared = &shmem[0];
     float * weightShared = &shmem[iWeight];   
-    
-    //Purely for testing purposes
-    int t = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
     n = blockIdx.x;
     m = blockIdx.y;
