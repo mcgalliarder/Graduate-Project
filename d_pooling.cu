@@ -11,16 +11,9 @@ __device__ int d_sigmoid(float x);
 
 void d_pooling(float * inputMap, float * outputMap, int numInput, int weightLen, int width)
 {
-    cudaEvent_t start_gpu, stop_gpu;
-    float gpuMsecTime = -1;
     float * d_inputMap;
     float * d_outputMap;
     int size = sizeof(float) * (width * width);
-
-    //time the sum
-    CHECK(cudaEventCreate(&start_gpu));
-    CHECK(cudaEventCreate(&stop_gpu));
-    CHECK(cudaEventRecord(start_gpu));
 
     CHECK(cudaMalloc((void **)&d_inputMap,size));
     CHECK(cudaMalloc((void **)&d_outputMap,size));

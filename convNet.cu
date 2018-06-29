@@ -23,7 +23,7 @@ int main(int argc, char * argv[])
     parseCommandArgs(argc, argv, &fileName);
     readPGMImage(fileName, &Pin, &width, &height, &color);
     //Print original
-    printf("Original\n");
+    printf("\nOriginal:");
     printCharArray(Pin, width);    
 
     //use the GPU to perform the convoluted neural network
@@ -36,7 +36,7 @@ int main(int argc, char * argv[])
     d_convLayerForward(Pin, d_Pout, weights, width, 1, weightLen);
 
     //Print result
-    printf("Convolution:\n");
+    printf("\nConvolution:");
     printFloatArray(d_Pout, 16);
     
     float * subOut;
@@ -45,8 +45,9 @@ int main(int argc, char * argv[])
     //GPU subsampling
     d_pooling(d_Pout, subOut, 1, 16, weightLen);
     
-    printf("\nPooling:\n");
-    printFloatArray(subOut, 16);
+    printf("\nPooling:");
+    printFloatArray(subOut, 5);
+    printf("\n");
 }
 
 void readPGMImage(char * filename, unsigned char ** Pin,
